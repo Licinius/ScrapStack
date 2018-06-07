@@ -23,7 +23,7 @@ class StackOverflowSpider(scrapy.Spider):
         if(url is None) :
             url = DEFAULT_URL
         yield scrapy.Request(url=url, callback=self.parse)
-    def parseUsers(self,response):
+    def parseUsers(self,response,users):
         '''
             Function use to parse the users of a page
             Args : 
@@ -31,11 +31,10 @@ class StackOverflowSpider(scrapy.Spider):
             Returns:
                 list of Users
         '''
-        users = [] #List of user
         user = {} # an user with a pseudo, an id and a reputation score
         for userDetail in response.css('div.user-details, .comment-user').xpath('./*[not(@class="community-wiki")]/..'):
             pseudo = userDetail.css('a::text').extract_first()
-            if( pseudo is not None):
+            if( pseudo is not None): #The user can be real or a community wiki
                 anchor = userDetail.css('a')[-1]
                 pseudo = anchor.css('::text').extract_first().strip()
                 userId = int(anchor.css('::attr(href)').extract_first().split('/')[2])
@@ -49,14 +48,14 @@ class StackOverflowSpider(scrapy.Spider):
                     reputationFormat = anchor.css('::attr(title)').extract_first(default="0")\
                         .split(' ')[0]
                 else :
-                     reputationFormat = "0";
+                    reputationFormat = "0";
                 user = {
                     'pseudo' : pseudo,
                     'userId' : userId,
                     'reputation' : int(reputationFormat.replace(',',''))
                 }
                 
-            else:  
+            else:  #The user must have delete his account
                 pseudo = userDetail.css('::text').extract_first().strip()
                 if(pseudo):
                     user = {
@@ -137,7 +136,7 @@ class StackOverflowSpider(scrapy.Spider):
 
         Args :
             response(Response) : object which travels back to the spider that issued the request.
-        Return:
+        Returns:
             Links of the related questions
         '''
         relatedQuestions = []
@@ -146,7 +145,36 @@ class StackOverflowSpider(scrapy.Spider):
         return relatedQuestions
 
     def getOwner(self,post):
-        return post.css('div.user-details')[-1]
+        '''
+        Get the owner of a post 
+        Args:
+            post: Object that represent a post of stackoverflow
+        Returns:
+            Response : The cell of the owner, can be a anonymous owner, a community wiki or a real user
+        '''
+        return post.css('div.user-details')[-1]#The last div.user-details
+    def parseAgain(self,response):
+        '''
+        Function fired if the page contains multiple page of answers
+        Args :
+            response(Response) : object which travels back to the spider that issued the request.
+        Yields :
+            A request if an other page have to be scrap
+        '''
+        page = response.url.split('/')[-2]
+        filename = 'question-%s.json' % page
+        with open(filename) as f:
+            question = json.load(f) #Load data already crawled
+
+        question['question']['answers'] = question['question']['answers'] + self.parseAnswers(response)#Add new answers
+        question['users'] = self.parseUsers(response,question['users']) #Add new users
+        with open(filename, 'w') as output:
+            json.dump(question,output)
+
+        nextPage = response.css('span.next').xpath('..').css('::attr(href)').extract_first()
+        if nextPage is not None:
+            nextPage = response.urljoin(nextPage)
+            yield scrapy.Request(nextPage, callback=self.parseAgain)
 
     def parse(self, response):
         '''
@@ -155,7 +183,6 @@ class StackOverflowSpider(scrapy.Spider):
             response(Response) : object which travels back to the spider that issued the request.
 
         '''
-        self.log('----Start---- ')
         page = response.url.split('/')[-2]
         questionId = int(response.css('div.question::attr(data-questionid)').extract_first())
         question = { 
@@ -173,8 +200,13 @@ class StackOverflowSpider(scrapy.Spider):
                 'answers' : self.parseAnswers(response),
                 'relatedQuestions': self.parseRelatedQuestions(response)
                 },
-            'users' : self.parseUsers(response)
+            'users' : self.parseUsers(response,[])
         }
         filename = 'question-%s.json' % page
         with open(filename, 'w') as output:
             json.dump(question,output)
+
+        nextPage = response.css('span.next').xpath('..').css('::attr(href)').extract_first()
+        if nextPage is not None:
+            nextPage = response.urljoin(nextPage)
+            yield scrapy.Request(nextPage, callback=self.parseAgain)
