@@ -23,7 +23,7 @@ class StackOverflowSpider(scrapy.Spider):
         if(urls[0] is None) :
             filename = getattr(self,KEY_PATH,None) #Get the path passed
             if filename is None:
-                filename = 'urls.json'
+                filename = 'res/urls.json'
             with open(filename) as f:
                 urls = json.load(f) 
                 self.log(urls)
@@ -168,7 +168,7 @@ class StackOverflowSpider(scrapy.Spider):
             A request if an other page have to be scrap
         '''
         page = response.url.split('/')[-2]
-        filename = 'questions/question-%s.json' % page
+        filename = 'output/question-%s.json' % page
         with open(filename) as f:
             question = json.load(f) #Load data already crawled
 
@@ -208,7 +208,7 @@ class StackOverflowSpider(scrapy.Spider):
                 },
             'users' : self.parseUsers(response,[])
         }
-        filename = 'questions/question-%s.json' % page
+        filename = 'output/question-%s.json' % page
         with open(filename, 'w') as output:
             json.dump(question,output)
 
