@@ -7,10 +7,10 @@ class StackOverflowSpider(scrapy.Spider):
     Attributes:
         name (str): Name of the spider.
     '''
-    name = 'stack_overflow'
+    name = 'ScrapStack'
     def start_requests(self):
         '''
-        First function fired with 'scrapy crawl stack_overflow'
+        First function fired with 'scrapy crawl ScrapStack'
         Args :
             *kwargs : url to scrap
 
