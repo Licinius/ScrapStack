@@ -26,7 +26,8 @@ class StackOverflowSpider(scrapy.Spider):
     def parseUsers(self,response):
         '''
             Function use to parse the users of a page
-            
+            Args : 
+                response(Response) : Allow to navigate throw the web page with css or/and xpath
             Returns:
                 list of Users
         '''
@@ -66,16 +67,31 @@ class StackOverflowSpider(scrapy.Spider):
     def parseAnswers(self,response):
         '''
         Parse the answers of a question
-
+        Args : 
+            response(Response) : Allow to navigate throw the web page with css or/and xpath
+            
         Return:
             List of answers
         ''' 
-        return None
+        answers = []
+        answer = {}
+        for divAnswer in response.css('div.answer'):
+            answer = {
+                'answerId' : int(divAnswer.css('::attr(data-answerid)').extract_first()),
+                'content' : divAnswer.css('div.post-text').xpath('string()').extract_first(),
+                'comments' :  self.parseComments(divAnswer.css('div.comments')),
+                'upvoteCount' : int(divAnswer.css('span.vote-count-post ::text').extract_first()),
+                'userId' : int(self.getUserId(divAnswer.css('div.user-details')))
+            }
+            if(answer):
+                answers.append(answer)
+        return answers
 
     def parseComments(self,post):
         '''
         Parse the comments of a post
-
+        Args : 
+            post(Response) : Allow to navigate throw the web page with css or/and xpath
         Return:
             List of comments
         ''' 
@@ -83,9 +99,11 @@ class StackOverflowSpider(scrapy.Spider):
         comment = None;
         for comment in post.css('li'):
             comment ={
-                'userId' : self.getUserId(comment.css('.comment-user')),
-                'content' : comment.css('span.comment-copy ::text').extract_first(),
-                'date' : comment.css('span.relativetime-clean::attr(title)').extract_first()
+                'commentId' : int(comment.css('::attr(data-comment-id)').extract_first()),
+                'content' : comment.css('span.comment-copy').xpath('string()').extract_first(),
+                'date' : comment.css('span.relativetime-clean::attr(title)').extract_first(),
+                'upvoteCount' : int(comment.css('span.cool::text').extract_first(default=0)),
+                'userId' : self.getUserId(comment.css('.comment-user'))
             }
             comments.append(comment)
         return comments
@@ -94,7 +112,7 @@ class StackOverflowSpider(scrapy.Spider):
         '''
         Return the userId of a post
         Args:
-            post(element) : Element with a user-details in it
+            post(Response) : Element with a user-details in it
         '''
         userId = None
         pseudo = post.css('a::text').extract_first()
@@ -105,12 +123,25 @@ class StackOverflowSpider(scrapy.Spider):
             if(not userId):
                 userId = None
         return userId
+    def parseRelatedQuestions(self,response):
+        '''
+        Function called to parse the related question of a question
+
+        Args :
+            response(Response) : object which travels back to the spider that issued the request.
+        Return:
+            Links of the related questions
+        '''
+        relatedQuestions = []
+        for link in response.css('div.related a.question-hyperlink::attr(href)').extract():
+            relatedQuestions.append("https://stackoverflow.com"+link)
+        return relatedQuestions
 
     def parse(self, response):
         '''
         Function fired when the page is download
         Args :
-            response : object which travels back to the spider that issued the request.
+            response(Response) : object which travels back to the spider that issued the request.
 
         '''
         self.log('----Start---- ')
@@ -120,15 +151,16 @@ class StackOverflowSpider(scrapy.Spider):
             'question' : {
                 'questionId': questionId,
                 'title': response.css('#question-header a.question-hyperlink ::text').extract_first(),
-                'favoriteCount' : int(response.css('div.favoritecount b::text').extract_first('default=0')),
+                'favoriteCount' : int(response.css('div.favoritecount b::text').extract_first(default=0)),
                 'userId' : self.getUserId(response.css('div.postcell div.owner div.user-details')),
                 'content' : response.css('div.postcell div.post-text ').xpath('string()').extract_first(),
                 'date': response.css('div.postcell div.owner div.user-action-time span::attr(title)').extract_first(),
                 'upvoteCount': int(response.css('span.vote-count-post::text').extract_first()),
                 'tags': response.css('a.post-tag ::text').extract(),
-                'selectedAnswer' : int(response.css('span.vote-accepted-on').xpath('preceding-sibling::*').css('input::attr(value)').extract_first()),
+                'selectedAnswer' : int(response.css('div.accepted-answer::attr(data-answerid)').extract_first(default=-1)),
+                'comments' : self.parseComments(response.css('#comments-%s' %questionId)),
                 'answers' : self.parseAnswers(response),
-                'comments' : self.parseComments(response.css('#comments-%s' %questionId))
+                'relatedQuestions': self.parseRelatedQuestions(response)
                 },
             'users' : self.parseUsers(response)
         }
