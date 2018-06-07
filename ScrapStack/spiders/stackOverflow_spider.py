@@ -33,19 +33,23 @@ class StackOverflowSpider(scrapy.Spider):
         '''
         users = [] #List of user
         user = {} # an user with a pseudo, an id and a reputation score
-        for userDetail in response.css('div.user-details, .comment-user'):
+        for userDetail in response.css('div.user-details, .comment-user').xpath('./*[not(@class="community-wiki")]/..'):
             pseudo = userDetail.css('a::text').extract_first()
             if( pseudo is not None):
-                userId = int(userDetail.css('a::attr(href)').extract_first().split('/')[2])
+                anchor = userDetail.css('a')[-1]
+                pseudo = anchor.css('::text').extract_first().strip()
+                userId = int(anchor.css('::attr(href)').extract_first().split('/')[2])
                 if(userDetail.css('span.reputation-score')):
                     reputationFormat = userDetail.css('span.reputation-score::attr(title)').extract_first()\
                         .split(' ')[2]
                     if(not reputationFormat):
-                        reputationFormat = userDetail.css('span.reputation-score ::text').extract_first()\
+                        reputationFormat = userDetail.css('span.reputation-score ::text').extract_first(default="0")\
                             .replace(',','')
-                else:#Comment-user
-                    reputationFormat = userDetail.css('a::attr(title)').extract_first()\
+                elif(not anchor.css('[id^=history]')):#Comment-user and not community-wiki title
+                    reputationFormat = anchor.css('::attr(title)').extract_first(default="0")\
                         .split(' ')[0]
+                else :
+                     reputationFormat = "0";
                 user = {
                     'pseudo' : pseudo,
                     'userId' : userId,
@@ -81,7 +85,8 @@ class StackOverflowSpider(scrapy.Spider):
                 'content' : divAnswer.css('div.post-text').xpath('string()').extract_first(),
                 'comments' :  self.parseComments(divAnswer.css('div.comments')),
                 'upvoteCount' : int(divAnswer.css('span.vote-count-post ::text').extract_first()),
-                'userId' : int(self.getUserId(divAnswer.css('div.user-details')))
+                'userId' : int(self.getUserId(self.getOwner(divAnswer))),
+                'date': self.getOwner(divAnswer).xpath("..").css(".relativetime::attr(title)").extract_first(default="")
             }
             if(answer):
                 answers.append(answer)
@@ -113,11 +118,14 @@ class StackOverflowSpider(scrapy.Spider):
         Return the userId of a post
         Args:
             post(Response) : Element with a user-details in it
+        Return: 
+            userId (int) id of the user
         '''
         userId = None
         pseudo = post.css('a::text').extract_first()
         if(pseudo is not None):
-            userId = int(post.css('a::attr(href)').extract_first().split('/')[2])                
+            anchor = post.css('a')[-1]
+            userId = int(anchor.css('::attr(href)').extract_first().split('/')[2])                
         else:
             userId = int(post.xpath('string()').extract_first().strip()[4:])
             if(not userId):
@@ -137,6 +145,9 @@ class StackOverflowSpider(scrapy.Spider):
             relatedQuestions.append("https://stackoverflow.com"+link)
         return relatedQuestions
 
+    def getOwner(self,post):
+        return post.css('div.user-details')[-1]
+
     def parse(self, response):
         '''
         Function fired when the page is download
@@ -152,9 +163,9 @@ class StackOverflowSpider(scrapy.Spider):
                 'questionId': questionId,
                 'title': response.css('#question-header a.question-hyperlink ::text').extract_first(),
                 'favoriteCount' : int(response.css('div.favoritecount b::text').extract_first(default=0)),
-                'userId' : self.getUserId(response.css('div.postcell div.owner div.user-details')),
+                'userId' : self.getUserId(self.getOwner(response.css('div.question:first-child'))),
                 'content' : response.css('div.postcell div.post-text ').xpath('string()').extract_first(),
-                'date': response.css('div.postcell div.owner div.user-action-time span::attr(title)').extract_first(),
+                'date': response.css('div.postcell div.owner div.user-action-time span::attr(title)').extract_first(default=""),
                 'upvoteCount': int(response.css('span.vote-count-post::text').extract_first()),
                 'tags': response.css('a.post-tag ::text').extract(),
                 'selectedAnswer' : int(response.css('div.accepted-answer::attr(data-answerid)').extract_first(default=-1)),
