@@ -25,8 +25,7 @@ class StackOverflowSpider(scrapy.Spider):
             if filename is None:
                 filename = 'res/urls.json'
             with open(filename) as f:
-                urls = json.load(f) 
-                self.log(urls)
+                urls = json.load(f)
         for url in urls :
             yield scrapy.Request(url=url, callback=self.parse)
     def parseUsers(self,response,users):
